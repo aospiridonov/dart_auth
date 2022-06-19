@@ -18,22 +18,41 @@ class AppAuthController extends ResourceController {
       ));
     }
 
-    final User fetchedUser = User();
-    //connect to DB
-    //find user
-    //check password
-    //fetch user
+    try {
+      final qFindUser = Query<User>(managedContext)
+        ..where((table) => table.username).equalTo(user.username)
+        ..returningProperties(
+          (table) => [
+            table.id,
+            table.salt,
+            table.hashPassword,
+          ],
+        );
+      final findUser = await qFindUser.fetchOne();
+      if (findUser == null) {
+        throw QueryException.input("User not found", []);
+      }
+      final requestHasPassword = AuthUtility.generatePasswordHash(
+        user.password ?? "",
+        findUser.salt ?? "",
+      );
 
-    return Response.ok(
-      ResponseModel(
-        data: {
-          'id': fetchedUser.id,
-          'refreshToken': fetchedUser.refreshToken,
-          'accessToken': fetchedUser.accessToken,
-        },
-        message: 'Successful authorization',
-      ).toJson(),
-    );
+      if (requestHasPassword == findUser.hashPassword) {
+        await _updateTokens(findUser.id ?? -1, managedContext);
+        final newUser =
+            await managedContext.fetchObjectWithID<User>(findUser.id);
+        return Response.ok(
+          ResponseModel(
+            data: newUser?.backing.contents,
+            message: "Successful authorization",
+          ),
+        );
+      } else {
+        throw QueryException.input("Ivalide password", []);
+      }
+    } on QueryException catch (error) {
+      return Response.serverError(body: ResponseModel(message: error.message));
+    }
   }
 
   @Operation.put()
@@ -60,12 +79,7 @@ class AppAuthController extends ResourceController {
 
         final createUser = await qCreateUser.insert();
         id = createUser.asMap()['id'];
-        final tokens = _getToken(id);
-        final qUpdateTokens = Query<User>(transaction)
-          ..where((user) => user.id).equalTo(id)
-          ..values.accessToken = tokens['access']
-          ..values.refreshToken = tokens['refresh'];
-        await qUpdateTokens.updateOne();
+        await _updateTokens(id, transaction);
         return null;
       });
       final userData = await managedContext.fetchObjectWithID<User>(id);
@@ -101,7 +115,7 @@ class AppAuthController extends ResourceController {
     );
   }
 
-  Map<String, dynamic> _getToken(int id) {
+  Map<String, dynamic> _getTokens(int id) {
     //TODO: remove when will be release
     final key = Platform.environment['SECRET_KEY'] ?? 'SECRET_KEY';
     final accessClaimSet =
@@ -112,5 +126,14 @@ class AppAuthController extends ResourceController {
       'refresh': issueJwtHS256(refreshClaimSet, key),
     };
     return token;
+  }
+
+  Future<void> _updateTokens(int id, ManagedContext transaction) async {
+    final Map<String, dynamic> tokens = _getTokens(id);
+    final qUpdateTokens = Query<User>(transaction)
+      ..where((user) => user.id).equalTo(id)
+      ..values.accessToken = tokens["access"]
+      ..values.refreshToken = tokens["refresh"];
+    await qUpdateTokens.updateOne();
   }
 }
