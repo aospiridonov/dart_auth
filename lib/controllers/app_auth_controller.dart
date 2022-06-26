@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:auth/models/response_model.dart';
 import 'package:auth/models/user.dart';
+import 'package:auth/utils/app_response.dart';
 import 'package:auth/utils/app_utils.dart';
 import 'package:conduit/conduit.dart';
 import 'package:jaguar_jwt/jaguar_jwt.dart';
@@ -15,7 +16,7 @@ class AppAuthController extends ResourceController {
     if (user.password == null || user.username == null) {
       return Response.badRequest(
           body: ResponseModel(
-        message: "Filds username and password are requiered!",
+        message: 'Filds username and password are requiered!',
       ));
     }
 
@@ -31,28 +32,26 @@ class AppAuthController extends ResourceController {
         );
       final findUser = await qFindUser.fetchOne();
       if (findUser == null) {
-        throw QueryException.input("User not found", []);
+        throw QueryException.input('User not found', []);
       }
       final requestHasPassword = AuthUtility.generatePasswordHash(
-        user.password ?? "",
-        findUser.salt ?? "",
+        user.password ?? '',
+        findUser.salt ?? '',
       );
 
       if (requestHasPassword == findUser.hashPassword) {
         await _updateTokens(findUser.id ?? -1, managedContext);
         final newUser =
             await managedContext.fetchObjectWithID<User>(findUser.id);
-        return Response.ok(
-          ResponseModel(
-            data: newUser?.backing.contents,
-            message: "Successful authorization",
-          ),
+        return AppResponse.ok(
+          body: newUser?.backing.contents,
+          message: 'Successful authorization',
         );
       } else {
-        throw QueryException.input("Ivalide password", []);
+        throw QueryException.input('Ivalide password', []);
       }
-    } on QueryException catch (error) {
-      return Response.serverError(body: ResponseModel(message: error.message));
+    } catch (error) {
+      return AppResponse.serverError(error, message: 'Fail authorization');
     }
   }
 
@@ -61,13 +60,13 @@ class AppAuthController extends ResourceController {
     if (user.password == null || user.username == null || user.email == null) {
       return Response.badRequest(
           body: ResponseModel(
-        message: "Filds username, password and email are requiered!",
+        message: 'Filds username, password and email are requiered!',
       ));
     }
 
     final salt = AuthUtility.generateRandomSalt();
     final hashPassword =
-        AuthUtility.generatePasswordHash(user.password ?? "", salt);
+        AuthUtility.generatePasswordHash(user.password ?? '', salt);
 
     try {
       late final int id;
@@ -84,26 +83,24 @@ class AppAuthController extends ResourceController {
         return null;
       });
       final userData = await managedContext.fetchObjectWithID<User>(id);
-      return Response.ok(
-        ResponseModel(
-          data: userData?.backing.contents,
-          message: 'Successful registration',
-        ),
+      return AppResponse.ok(
+        body: userData?.backing.contents,
+        message: 'Successful registration',
       );
-    } on QueryException catch (error) {
-      return Response.serverError(body: ResponseModel(message: error.message));
+    } catch (error) {
+      return AppResponse.serverError(error, message: 'Fail registration');
     }
   }
 
   @Operation.post('refresh')
   Future<Response> refreshToken(
-      @Bind.path("refresh") String refreshToken) async {
+      @Bind.path('refresh') String refreshToken) async {
     try {
       final id = AppUtils.getIdFromToken(refreshToken);
       final user = await managedContext.fetchObjectWithID<User>(id);
       if (user?.refreshToken != refreshToken) {
         return Response.unauthorized(
-            body: ResponseModel(message: "Token is not valide!"));
+            body: ResponseModel(message: 'Token is not valide!'));
       } else {
         await _updateTokens(id, managedContext);
         final user = await managedContext.fetchObjectWithID<User>(id);
@@ -113,8 +110,7 @@ class AppAuthController extends ResourceController {
         ));
       }
     } catch (error) {
-      return Response.serverError(
-          body: ResponseModel(message: error.toString()));
+      return AppResponse.serverError(error, message: 'Fail update tokens');
     }
   }
 
@@ -135,8 +131,8 @@ class AppAuthController extends ResourceController {
     final Map<String, dynamic> tokens = _getTokens(id);
     final qUpdateTokens = Query<User>(transaction)
       ..where((user) => user.id).equalTo(id)
-      ..values.accessToken = tokens["access"]
-      ..values.refreshToken = tokens["refresh"];
+      ..values.accessToken = tokens['access']
+      ..values.refreshToken = tokens['refresh'];
     await qUpdateTokens.updateOne();
   }
 }
