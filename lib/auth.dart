@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:auth/controllers/app_auth_controller.dart';
+import 'package:auth/controllers/app_token_controller.dart';
+import 'package:auth/controllers/app_user_controller.dart';
 import 'package:conduit/conduit.dart';
 
 class AppService extends ApplicationChannel {
@@ -20,7 +22,10 @@ class AppService extends ApplicationChannel {
   Controller get entryPoint => Router()
     ..route('token/[:refresh]').link(
       () => AppAuthController(managedContext),
-    );
+    )
+    ..route('user')
+        .link(() => AppTokenController())!
+        .link(() => AppUserController(managedContext));
 
   PostgreSQLPersistentStore _initDatabase() {
     final username = Platform.environment['DB_USERNAME'] ?? 'admin';
